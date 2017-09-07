@@ -5,7 +5,7 @@ module Sidekiq
       GROUPED_QUEUE = "metrics".freeze
 
       def call(worker_class, msg, queue, redis_pool = nil)
-        return yield if (defined?(Sidekiq::Testing) && Sidekiq::Testing.inline?)
+        return yield if disable_grouping?(queue)
 
         passthrough =
           msg['args'] &&
@@ -13,8 +13,6 @@ module Sidekiq
           msg['args'].try(:first) == true
 
         retrying = msg["failed_at"].present?
-
-        return yield unless batch?(queue)
 
         if !(passthrough || retrying)
           add_to_batch(worker_class, queue, msg, redis_pool)
@@ -26,8 +24,16 @@ module Sidekiq
 
       private
 
-      def batch?(queue)
-        queue == GROUPED_QUEUE
+      def disable_grouping?(queue)
+        testing? || unsported_queue?(queue)
+      end
+
+      def testing?
+        defined?(Sidekiq::Testing) && Sidekiq::Testing.inline?
+      end
+
+      def unsported_queue?(queue)
+        queue != GROUPED_QUEUE
       end
 
       def add_to_batch(worker_class, queue, msg, redis_pool = nil)
